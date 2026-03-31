@@ -1,0 +1,76 @@
+name: Deploy Upstream
+
+on:
+  workflow_dispatch:
+  # Uncomment after review and testing:
+  # push:
+  #   branches: [release]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  deploy-public-upstream:
+    runs-on: sbx-pan-base
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-tags: true
+          fetch-depth: 0
+
+      - name: Get SSH key from Vault
+        uses: pantheon-systems/common-gh/get-repo-vault-secret@79935b3b77d045f1c480766b0b40b998b680a0d8 # main
+        id: ssh-key
+        with:
+          vault_secret_name: pantheon-upstream-github-ssh-key
+          vault_secret_field: private-key
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+        env:
+          SSH_KEY: ${{ steps.ssh-key.outputs.secret }}
+
+      - name: Copy commits to destination repo
+        run: devops/scripts/deploy-public-upstream.sh
+
+  deploy-decoupled-upstream:
+    runs-on: sbx-pan-base
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-tags: true
+          fetch-depth: 0
+
+      - name: Get SSH key from Vault
+        uses: pantheon-systems/common-gh/get-repo-vault-secret@79935b3b77d045f1c480766b0b40b998b680a0d8 # main
+        id: ssh-key
+        with:
+          vault_secret_name: pantheon-upstream-github-ssh-key
+          vault_secret_field: private-key
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+        env:
+          SSH_KEY: ${{ steps.ssh-key.outputs.secret }}
+
+      - name: Run decoupledpatch.sh and copy commits to decoupled destination repo
+        run: devops/scripts/deploy-decoupled-upstream.sh

@@ -1,0 +1,140 @@
+name: CI
+
+on:
+  workflow_dispatch:
+  # Uncomment after review and testing:
+  # push:
+  #   branches: ['**', 'release']
+  # pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions: {}
+
+jobs:
+  unit-test:
+    runs-on: sbx-pan-base
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    container:
+      image: wodby/php:8.1
+      env:
+        MYSQL_HOST: mysql
+        DRUSH_SI_DB_URL: mysql://root:@mysql/testdb
+    services:
+      mysql:
+        image: mysql:5.7
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+          MYSQL_DATABASE: testdb
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Run unit tests
+        run: |
+          cd devops/phpunit
+          composer install
+          composer unit
+
+  check-commits:
+    needs: [unit-test]
+    runs-on: sbx-pan-base
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Check validity of commits in PR
+        run: devops/scripts/check-commits.sh
+
+  check-patch:
+    needs: [unit-test]
+    runs-on: sbx-pan-base
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Check that patch file applies without errors
+        run: devops/scripts/check-patch.sh
+
+  deploy-public-upstream:
+    if: github.ref == 'refs/heads/release'
+    runs-on: sbx-pan-base
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-tags: true
+          fetch-depth: 0
+
+      - name: Get SSH key from Vault
+        uses: pantheon-systems/common-gh/get-repo-vault-secret@79935b3b77d045f1c480766b0b40b998b680a0d8 # main
+        id: ssh-key
+        with:
+          vault_secret_name: pantheon-upstream-github-ssh-key
+          vault_secret_field: private-key
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+        env:
+          SSH_KEY: ${{ steps.ssh-key.outputs.secret }}
+
+      - name: Copy commits to destination repo
+        run: devops/scripts/deploy-public-upstream.sh
+
+  deploy-decoupled-upstream:
+    if: github.ref == 'refs/heads/release'
+    runs-on: sbx-pan-base
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-tags: true
+          fetch-depth: 0
+
+      - name: Get SSH key from Vault
+        uses: pantheon-systems/common-gh/get-repo-vault-secret@79935b3b77d045f1c480766b0b40b998b680a0d8 # main
+        id: ssh-key
+        with:
+          vault_secret_name: pantheon-upstream-github-ssh-key
+          vault_secret_field: private-key
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+        env:
+          SSH_KEY: ${{ steps.ssh-key.outputs.secret }}
+
+      - name: Run decoupledpatch.sh and copy commits to decoupled destination repo
+        run: devops/scripts/deploy-decoupled-upstream.sh
