@@ -1,3 +1,6 @@
+[![CI](https://github.com/pantheon-systems/drupal-composer-managed-1/actions/workflows/main.yml/badge.svg)](https://github.com/pantheon-systems/drupal-composer-managed-1/actions/workflows/main.yml)
+[![Codacy Badge](https://app.codacy.com/project/badge/Grade/PLACEHOLDER)](https://app.codacy.com/gh/pantheon-systems/drupal-composer-managed-1/dashboard)
+
 # Composer-enabled Drupal template
 
 This is Pantheon's recommended starting point for forking new [Drupal](https://www.drupal.org/) upstreams
